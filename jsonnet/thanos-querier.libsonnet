@@ -265,6 +265,12 @@ function(params)
       },
 
     deployment+: {
+      metadata+: {
+        labels+: {
+          "app.kubernetes.io/managed-by" : "cluster-monitoring-operator",
+          "app.kubernetes.io/part-of" : "openshift-monitoring",
+        }
+      },
       spec+: {
         strategy+: {
           // Apply HA conventions
