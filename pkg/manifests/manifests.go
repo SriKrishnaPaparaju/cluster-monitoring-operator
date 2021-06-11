@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/cluster-monitoring-operator/pkg/promqlgen"
 	"github.com/pkg/errors"
 	monv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	yaml2 "gopkg.in/yaml.v2"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -51,19 +52,18 @@ const (
 )
 
 var (
-	AlertmanagerConfig              = "alertmanager/secret.yaml"
-	AlertmanagerService             = "alertmanager/service.yaml"
-	AlertmanagerProxySecret         = "alertmanager/proxy-secret.yaml"
-	AlertmanagerMain                = "alertmanager/alertmanager.yaml"
-	AlertmanagerServiceAccount      = "alertmanager/service-account.yaml"
-	AlertmanagerClusterRoleBinding  = "alertmanager/cluster-role-binding.yaml"
-	AlertmanagerClusterRole         = "alertmanager/cluster-role.yaml"
-	AlertmanagerRBACProxySecret     = "alertmanager/kube-rbac-proxy-secret.yaml"
-	AlertmanagerRoute               = "alertmanager/route.yaml"
-	AlertmanagerServiceMonitor      = "alertmanager/service-monitor.yaml"
-	AlertmanagerTrustedCABundle     = "alertmanager/trusted-ca-bundle.yaml"
-	AlertmanagerPrometheusRule      = "alertmanager/prometheus-rule.yaml"
-	AlertmanagerPodDisruptionBudget = "alertmanager/pod-disruption-budget.yaml"
+	AlertmanagerConfig             = "alertmanager/secret.yaml"
+	AlertmanagerService            = "alertmanager/service.yaml"
+	AlertmanagerProxySecret        = "alertmanager/proxy-secret.yaml"
+	AlertmanagerMain               = "alertmanager/alertmanager.yaml"
+	AlertmanagerServiceAccount     = "alertmanager/service-account.yaml"
+	AlertmanagerClusterRoleBinding = "alertmanager/cluster-role-binding.yaml"
+	AlertmanagerClusterRole        = "alertmanager/cluster-role.yaml"
+	AlertmanagerRBACProxySecret    = "alertmanager/kube-rbac-proxy-secret.yaml"
+	AlertmanagerRoute              = "alertmanager/route.yaml"
+	AlertmanagerServiceMonitor     = "alertmanager/service-monitor.yaml"
+	AlertmanagerTrustedCABundle    = "alertmanager/trusted-ca-bundle.yaml"
+	AlertmanagerPrometheusRule     = "alertmanager/prometheus-rule.yaml"
 
 	KubeStateMetricsClusterRoleBinding = "kube-state-metrics/cluster-role-binding.yaml"
 	KubeStateMetricsClusterRole        = "kube-state-metrics/cluster-role.yaml"
@@ -110,7 +110,6 @@ var (
 	PrometheusK8sGrpcTLSSecret               = "prometheus-k8s/grpc-tls-secret.yaml"
 	PrometheusK8sTrustedCABundle             = "prometheus-k8s/trusted-ca-bundle.yaml"
 	PrometheusK8sThanosSidecarServiceMonitor = "prometheus-k8s/service-monitor-thanos-sidecar.yaml"
-	PrometheusK8sPodDisruptionBudget         = "prometheus-k8s/pod-disruption-budget.yaml"
 
 	PrometheusUserWorkloadServingCertsCABundle        = "prometheus-user-workload/serving-certs-ca-bundle.yaml"
 	PrometheusUserWorkloadServiceAccount              = "prometheus-user-workload/service-account.yaml"
@@ -126,7 +125,6 @@ var (
 	PrometheusUserWorkloadPrometheusServiceMonitor    = "prometheus-user-workload/service-monitor.yaml"
 	PrometheusUserWorkloadGrpcTLSSecret               = "prometheus-user-workload/grpc-tls-secret.yaml"
 	PrometheusUserWorkloadThanosSidecarServiceMonitor = "prometheus-user-workload/service-monitor-thanos-sidecar.yaml"
-	PrometheusUserWorkloadPodDisruptionBudget         = "prometheus-user-workload/pod-disruption-budget.yaml"
 
 	PrometheusAdapterAPIService                         = "prometheus-adapter/api-service.yaml"
 	PrometheusAdapterClusterRole                        = "prometheus-adapter/cluster-role.yaml"
@@ -196,6 +194,7 @@ var (
 	TelemeterClientServingCertsCABundle   = "telemeter-client/serving-certs-ca-bundle.yaml"
 
 	ThanosQuerierDeployment           = "thanos-querier/deployment.yaml"
+	ThanosQuerierPodDisruptionBudget  = "thanos-querier/pod-disruption-budget.yaml"
 	ThanosQuerierService              = "thanos-querier/service.yaml"
 	ThanosQuerierServiceMonitor       = "thanos-querier/service-monitor.yaml"
 	ThanosQuerierPrometheusRule       = "thanos-querier/prometheus-rule.yaml"
@@ -244,6 +243,9 @@ var (
 	AuthProxyRedirectURLFlag  = "-redirect-url="
 
 	TrustedCABundleKey = "ca-bundle.crt"
+
+	AdditionalAlertmanagerConfigSecretKey  = "alertmanager-configs.yaml"
+	AdditionalAlertmanagerConfigSecretName = "prometheus-k8s-additional-alertmanager-configs"
 )
 
 type Factory struct {
@@ -486,10 +488,6 @@ func (f *Factory) AlertmanagerRoute() (*routev1.Route, error) {
 
 func (f *Factory) AlertmanagerPrometheusRule() (*monv1.PrometheusRule, error) {
 	return f.NewPrometheusRule(f.assets.MustNewAssetReader(AlertmanagerPrometheusRule))
-}
-
-func (f *Factory) AlertmanagerPodDisruptionBudget() (*policyv1.PodDisruptionBudget, error) {
-	return f.NewPodDisruptionBudget(f.assets.MustNewAssetReader(AlertmanagerPodDisruptionBudget))
 }
 
 func (f *Factory) KubeStateMetricsClusterRoleBinding() (*rbacv1.ClusterRoleBinding, error) {
@@ -1358,7 +1356,148 @@ func (f *Factory) PrometheusK8s(host string, grpcTLS *v1.Secret, trustedCABundle
 		}
 	}
 
+	if f.config.ClusterMonitoringConfiguration.PrometheusK8sConfig.AlertmanagerConfigs != nil {
+		p.Spec.AdditionalAlertManagerConfigs = &v1.SecretKeySelector{
+			Key: AdditionalAlertmanagerConfigSecretKey,
+			LocalObjectReference: v1.LocalObjectReference{
+				Name: AdditionalAlertmanagerConfigSecretName,
+			},
+		}
+		p.Spec.Secrets = append(p.Spec.Secrets, getAdditionalAlertmanagerSecrets(f.config.ClusterMonitoringConfiguration.PrometheusK8sConfig.AlertmanagerConfigs)...)
+	}
+
 	return p, nil
+}
+
+func (f *Factory) AdditionalAlertManagerConfigsSecret() (*v1.Secret, error) {
+	alertmanagerConfigs := f.config.ClusterMonitoringConfiguration.PrometheusK8sConfig.AlertmanagerConfigs
+	if len(alertmanagerConfigs) == 0 {
+		return nil, nil
+	}
+
+	cfgs := []yaml2.MapSlice{}
+	for _, alertmanagerConfig := range alertmanagerConfigs {
+		cfg := yaml2.MapSlice{}
+
+		if alertmanagerConfig.Scheme != "" {
+			cfg = append(cfg, yaml2.MapItem{
+				Key: "scheme", Value: alertmanagerConfig.Scheme,
+			})
+		}
+		if alertmanagerConfig.PathPrefix != "" {
+			cfg = append(cfg, yaml2.MapItem{
+				Key: "path_prefix", Value: alertmanagerConfig.PathPrefix,
+			})
+		}
+		if alertmanagerConfig.APIVersion != "" {
+			cfg = append(cfg, yaml2.MapItem{
+				Key: "api_version", Value: alertmanagerConfig.APIVersion,
+			})
+		}
+		if alertmanagerConfig.Timeout != nil {
+			cfg = append(cfg, yaml2.MapItem{
+				Key: "timeout", Value: alertmanagerConfig.Timeout,
+			})
+		}
+
+		auth := yaml2.MapSlice{}
+		if alertmanagerConfig.BearerToken != nil {
+			if alertmanagerConfig.BearerToken.Name == "" {
+				return nil, errors.Errorf("secret %q for bearer token not found", alertmanagerConfig.BearerToken.Name)
+			}
+			if alertmanagerConfig.BearerToken.Key == "" {
+				return nil, errors.Errorf("secret key %q for bearer token not found", alertmanagerConfig.BearerToken.Key)
+			}
+			auth = append(auth, yaml2.MapItem{
+				Key: "credentials_file", Value: fmt.Sprintf("/etc/prometheus/secrets/%s/%s",
+					alertmanagerConfig.BearerToken.Name, alertmanagerConfig.BearerToken.Key),
+			})
+		}
+		if len(auth) != 0 {
+			cfg = append(cfg, yaml2.MapItem{
+				Key:   "authorization",
+				Value: auth,
+			})
+		}
+		tlsConfig := yaml2.MapSlice{}
+		if alertmanagerConfig.TLSConfig.CA != nil {
+			if alertmanagerConfig.TLSConfig.CA.Name == "" {
+				return nil, errors.Errorf("secret %q for ca not found", alertmanagerConfig.TLSConfig.CA.Name)
+			}
+			if alertmanagerConfig.TLSConfig.CA.Key == "" {
+				return nil, errors.Errorf("secret key %q for ca not found", alertmanagerConfig.TLSConfig.CA.Key)
+			}
+			tlsConfig = append(tlsConfig, yaml2.MapItem{
+				Key: "ca_file", Value: fmt.Sprintf("/etc/prometheus/secrets/%s/%s",
+					alertmanagerConfig.TLSConfig.CA.Name, alertmanagerConfig.TLSConfig.CA.Key),
+			})
+		}
+		if alertmanagerConfig.TLSConfig.Cert != nil {
+			if alertmanagerConfig.TLSConfig.Cert.Name == "" {
+				return nil, errors.Errorf("secret %q for cert not found", alertmanagerConfig.TLSConfig.Cert.Name)
+			}
+			if alertmanagerConfig.TLSConfig.Cert.Key == "" {
+				return nil, errors.Errorf("secret key %q for cert not found", alertmanagerConfig.TLSConfig.Cert.Key)
+			}
+			tlsConfig = append(tlsConfig, yaml2.MapItem{
+				Key: "cert_file", Value: fmt.Sprintf("/etc/prometheus/secrets/%s/%s",
+					alertmanagerConfig.TLSConfig.Cert.Name, alertmanagerConfig.TLSConfig.Cert.Key),
+			})
+		}
+		if alertmanagerConfig.TLSConfig.Key != nil {
+			if alertmanagerConfig.TLSConfig.Key.Name == "" {
+				return nil, errors.Errorf("secret %q for cert key not found", alertmanagerConfig.TLSConfig.Key.Name)
+			}
+			if alertmanagerConfig.TLSConfig.Key.Key == "" {
+				return nil, errors.Errorf("secret key %q for cert key not found", alertmanagerConfig.TLSConfig.Key.Key)
+			}
+			tlsConfig = append(tlsConfig, yaml2.MapItem{
+				Key: "key_file", Value: fmt.Sprintf("/etc/prometheus/secrets/%s/%s",
+					alertmanagerConfig.TLSConfig.Key.Name, alertmanagerConfig.TLSConfig.Key.Key),
+			})
+		}
+		if alertmanagerConfig.TLSConfig.ServerName != "" {
+			tlsConfig = append(tlsConfig, yaml2.MapItem{
+				Key: "server_name", Value: alertmanagerConfig.TLSConfig.ServerName,
+			})
+		}
+		tlsConfig = append(tlsConfig, yaml2.MapSlice{
+			{Key: "insecure_skip_verify", Value: alertmanagerConfig.TLSConfig.InsecureSkipVerify},
+		}...)
+
+		cfg = append(cfg, yaml2.MapItem{
+			Key:   "tls_config",
+			Value: tlsConfig,
+		})
+
+		if len(alertmanagerConfig.StaticConfigs) > 0 {
+			sc := yaml2.MapSlice{
+				{Key: "targets", Value: alertmanagerConfig.StaticConfigs},
+			}
+			cfg = append(cfg, yaml2.MapItem{
+				Key:   "static_configs",
+				Value: []yaml2.MapSlice{sc},
+			})
+			cfgs = append(cfgs, cfg)
+		}
+	}
+
+	amConfigYaml, err := yaml2.Marshal(cfgs)
+	if err != nil {
+		return nil, err
+	}
+
+	additionalPromToAmConfigSecret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      AdditionalAlertmanagerConfigSecretName,
+			Namespace: f.namespace,
+		},
+		Data: map[string][]byte{
+			AdditionalAlertmanagerConfigSecretKey: amConfigYaml,
+		},
+	}
+
+	return additionalPromToAmConfigSecret, nil
 }
 
 func (f *Factory) PrometheusUserWorkload(grpcTLS *v1.Secret) (*monv1.Prometheus, error) {
@@ -1454,14 +1593,6 @@ func (f *Factory) PrometheusUserWorkloadPrometheusServiceMonitor() (*monv1.Servi
 	sm.Namespace = f.namespaceUserWorkload
 
 	return sm, nil
-}
-
-func (f *Factory) PrometheusK8sPodDisruptionBudget() (*policyv1.PodDisruptionBudget, error) {
-	return f.NewPodDisruptionBudget(f.assets.MustNewAssetReader(PrometheusK8sPodDisruptionBudget))
-}
-
-func (f *Factory) PrometheusUserWorkloadPodDisruptionBudget() (*policyv1.PodDisruptionBudget, error) {
-	return f.NewPodDisruptionBudget(f.assets.MustNewAssetReader(PrometheusUserWorkloadPodDisruptionBudget))
 }
 
 func (f *Factory) PrometheusAdapterClusterRole() (*rbacv1.ClusterRole, error) {
@@ -2740,6 +2871,19 @@ func (f *Factory) NewValidatingWebhook(manifest io.Reader) (*admissionv1.Validat
 	return NewValidatingWebhook(manifest)
 }
 
+func (f *Factory) ThanosQuerierPodDisruptionBudget() (*policyv1.PodDisruptionBudget, error) {
+	pdb, err := f.NewPodDisruptionBudget(f.assets.MustNewAssetReader(ThanosQuerierPodDisruptionBudget))
+	if err != nil {
+		return nil, err
+	}
+
+	if pdb != nil {
+		pdb.Namespace = f.namespace
+	}
+
+	return pdb, nil
+}
+
 func (f *Factory) ThanosQuerierDeployment(grpcTLS *v1.Secret, enableUserWorkloadMonitoring bool, trustedCA *v1.ConfigMap) (*appsv1.Deployment, error) {
 	d, err := f.NewDeployment(f.assets.MustNewAssetReader(ThanosQuerierDeployment))
 	if err != nil {
@@ -3585,4 +3729,47 @@ func trustedCABundleVolume(configMapName, volumeName string) v1.Volume {
 			},
 		},
 	}
+}
+
+func getAdditionalAlertmanagerSecrets(alertmanagerConfigs []AdditionalAlertmanagerConfig) []string {
+
+	secretsName := []string{}
+	for _, alertmanagerConfig := range alertmanagerConfigs {
+		if alertmanagerConfig.TLSConfig.CA != nil {
+			secretsName = append(secretsName, alertmanagerConfig.TLSConfig.CA.Name)
+		}
+		if alertmanagerConfig.TLSConfig.Cert != nil {
+			secretsName = append(secretsName, alertmanagerConfig.TLSConfig.Cert.Name)
+		}
+		if alertmanagerConfig.TLSConfig.Key != nil {
+			secretsName = append(secretsName, alertmanagerConfig.TLSConfig.Key.Name)
+		}
+		if alertmanagerConfig.BearerToken != nil {
+			secretsName = append(secretsName, alertmanagerConfig.BearerToken.Name)
+		}
+	}
+	return removeEmptyDuplicates(secretsName)
+}
+
+func removeEmptyDuplicates(elements []string) []string {
+	// Use map to record duplicates as we find them.
+	encountered := map[string]struct{}{}
+	result := []string{}
+
+	for _, v := range elements {
+		if _, found := encountered[v]; found {
+			continue
+		}
+		encountered[v] = struct{}{}
+		if v != "" {
+			// Append to result slice if it is not empty
+			result = append(result, v)
+		}
+	}
+	// Return the new slice.
+	return result
+}
+
+func (f *Factory) GetAdditionalAlertmanagerConfigSecretName() string {
+	return AdditionalAlertmanagerConfigSecretName
 }
