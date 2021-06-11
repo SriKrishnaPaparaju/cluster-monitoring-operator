@@ -170,6 +170,11 @@ function(params)
     // TLS.
 
     deployment+: {
+      metadata+: {
+        labels+: {
+          'app.kubernetes.io/managed-by': 'cluster-monitoring-operator',
+        },
+      },
       spec+: {
         template+: {
           spec+: {

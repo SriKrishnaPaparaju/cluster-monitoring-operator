@@ -33,11 +33,11 @@ function(params) {
   deployment: tc.telemeterClient.deployment {
     metadata+: {
       labels+: {
-        "app.kubernetes.io/managed-by" : "cluster-monitoring-operator",
-        "app.kubernetes.io/part-of" : "openshift-monitoring",
-        "app.kubernetes.io/component" : "telemetry-metrics-collector",
-        "app.kubernetes.io/name" : "telemeter-client",
-      }
+        'app.kubernetes.io/managed-by': 'cluster-monitoring-operator',
+        'app.kubernetes.io/part-of': 'openshift-monitoring',
+        'app.kubernetes.io/component': 'telemetry-metrics-collector',
+        'app.kubernetes.io/name': 'telemeter-client',
+      },
     },
     spec+: {
       template+: {
