@@ -93,7 +93,7 @@ type PrometheusK8sConfig struct {
 	RemoteWrite         []monv1.RemoteWriteSpec              `json:"remoteWrite"`
 	TelemetryMatches    []string                             `json:"-"`
 	// EXPERIMENTAL: this configuration field may change in future releases.
-	AlertmanagerConfigs []AdditionalAlertmanagerConfig       `json:"additionalAlertManagerConfigs"`
+	AlertmanagerConfigs []AdditionalAlertmanagerConfig `json:"additionalAlertManagerConfigs"`
 }
 
 type AdditionalAlertmanagerConfig struct {
@@ -122,12 +122,13 @@ type TLSConfig struct {
 	// The client key in the Prometheus container to use for the targets.
 	Key *v1.SecretKeySelector `json:"key,omitempty"`
 	// Used to verify the hostname for the targets.
-	ServerName string `yaml:"server_name,omitempty"`
+	ServerName string `json:"serverName,omitempty"`
 	// Disable target certificate validation.
 	InsecureSkipVerify bool `json:"insecureSkipVerify"`
 }
 
 type AlertmanagerMainConfig struct {
+	LogLevel            string                               `json:"logLevel"`
 	NodeSelector        map[string]string                    `json:"nodeSelector"`
 	Tolerations         []v1.Toleration                      `json:"tolerations"`
 	Resources           *v1.ResourceRequirements             `json:"resources"`

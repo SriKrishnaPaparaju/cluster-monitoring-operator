@@ -48,23 +48,14 @@ local commonConfig = {
       },
     ],
   },
+  mixinNamespaceSelector: 'namespace=~"(openshift-.*|kube-.*|default|logging)"',
   prometheusName: 'k8s',
   ruleLabels: {
     role: 'alert-rules',
     prometheus: $.prometheusName,
   },
   // versions are used by some CRs and reflected in labels.
-  versions: {
-    alertmanager: '0.21.0',
-    prometheus: '2.26.1',
-    grafana: '7.5.4',
-    kubeStateMetrics: '2.0.0',
-    nodeExporter: '1.1.2',
-    prometheusAdapter: '0.8.4',
-    prometheusOperator: '0.48.1',
-    promLabelProxy: '0.2.0',
-    thanos: '0.20.2',
-  },
+  versions: (import './versions.json'),
   // In OSE images are overridden
   images: {
     alertmanager: 'quay.io/prometheus/alertmanager:v' + $.versions.alertmanager,
@@ -75,9 +66,10 @@ local commonConfig = {
     prometheusAdapter: 'directxman12/k8s-prometheus-adapter:v' + $.versions.prometheusAdapter,
     prometheusOperator: 'quay.io/prometheus-operator/prometheus-operator:v' + $.versions.prometheusOperator,
     prometheusOperatorReloader: 'quay.io/prometheus-operator/prometheus-config-reloader:v' + $.versions.prometheusOperator,
-    promLabelProxy: 'quay.io/prometheuscommunity/prom-label-proxy:v' + $.versions.thanos,
+    promLabelProxy: 'quay.io/prometheuscommunity/prom-label-proxy:v' + $.versions.promLabelProxy,
     telemeter: '',
     thanos: 'quay.io/thanos/thanos:v' + $.versions.thanos,
+    kubeRbacProxy: 'quay.io/brancz/kube-rbac-proxy:v' + $.versions.kubeRbacProxy,
 
     openshiftOauthProxy: 'quay.io/openshift/oauth-proxy:latest',
     //kubeRbacProxy: 'quay.io/brancz/kube-rbac-proxy:v0.8.0',
@@ -86,6 +78,8 @@ local commonConfig = {
   commonLabels: {
     'app.kubernetes.io/part-of': 'openshift-monitoring',
   },
+  // TLS Cipher suite applied to every component serving HTTPS traffic
+  tlsCipherSuites: 'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305',
 };
 
 // objects deployed in openshift-monitoring namespace
@@ -103,6 +97,7 @@ local inCluster =
           ruleLabels: $.values.common.ruleLabels,
           _config+: {
             diskDeviceSelector: $.values.nodeExporter.mixin._config.diskDeviceSelector,
+            namespaceSelector: $.values.common.mixinNamespaceSelector,
           },
         },
       },
@@ -112,7 +107,10 @@ local inCluster =
         version: $.values.common.versions.alertmanager,
         image: $.values.common.images.alertmanager,
         commonLabels+: $.values.common.commonLabels,
+        tlsCipherSuites: $.values.common.tlsCipherSuites,
         mixin+: { ruleLabels: $.values.common.ruleLabels },
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
+        promLabelProxyImage: $.values.common.images.promLabelProxy,
       },
       grafana: {
         namespace: $.values.common.namespace,
@@ -204,6 +202,7 @@ local inCluster =
         namespace: $.values.common.namespace,
         version: $.values.common.versions.kubeStateMetrics,
         image: $.values.common.images.kubeStateMetrics,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
         commonLabels+: $.values.common.commonLabels,
         mixin+: { ruleLabels: $.values.common.ruleLabels },
       },
@@ -211,6 +210,7 @@ local inCluster =
         namespace: $.values.common.namespace,
         version: $.values.common.versions.nodeExporter,
         image: $.values.common.images.nodeExporter,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
         commonLabels+: $.values.common.commonLabels,
         mixin+: {
           ruleLabels: $.values.common.ruleLabels,
@@ -221,6 +221,7 @@ local inCluster =
       },
       openshiftStateMetrics: {
         namespace: $.values.common.namespace,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
       },
       prometheus: {
         namespace: $.values.common.namespace,
@@ -242,6 +243,9 @@ local inCluster =
           },
         },
         thanos: $.values.thanosSidecar,
+        tlsCipherSuites: $.values.common.tlsCipherSuites,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
+        promLabelProxyImage: $.values.common.images.promLabelProxy,
       },
       prometheusAdapter: {
         namespace: $.values.common.namespace,
@@ -249,11 +253,13 @@ local inCluster =
         image: $.values.common.images.prometheusAdapter,
         prometheusURL: 'https://prometheus-' + $.values.prometheus.name + '.' + $.values.common.namespace + '.svc:9091',
         commonLabels+: $.values.common.commonLabels,
+        tlsCipherSuites: $.values.common.tlsCipherSuites,
       },
       prometheusOperator: {
         namespace: $.values.common.namespace,
         version: $.values.common.versions.prometheusOperator,
         image: $.values.common.images.prometheusOperator,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
         configReloaderImage: $.values.common.images.prometheusOperatorReloader,
         commonLabels+: $.values.common.commonLabels,
         mixin+: {
@@ -262,6 +268,7 @@ local inCluster =
             prometheusSelector: 'job=~"prometheus-k8s|prometheus-user-workload"',
           },
         },
+        tlsCipherSuites: $.values.common.tlsCipherSuites,
       },
       thanos: {
         image: $.values.common.images.thanos,
@@ -298,9 +305,13 @@ local inCluster =
         replicaLabels: ['prometheus_replica', 'thanos_ruler_replica'],
         stores: ['dnssrv+_grpc._tcp.prometheus-operated.openshift-monitoring.svc.cluster.local'],
         serviceMonitor: true,
+        tlsCipherSuites: $.values.common.tlsCipherSuites,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
+        promLabelProxyImage: $.values.common.images.promLabelProxy,
       },
       telemeterClient: {
         namespace: $.values.common.namespace,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
       },
       controlPlane: {
         namespace: $.values.common.namespace,
@@ -311,7 +322,7 @@ local inCluster =
             diskDeviceSelector: $.values.nodeExporter.mixin._config.diskDeviceSelector,
             hostNetworkInterfaceSelector: 'device!~"veth.+"',
             kubeSchedulerSelector: 'job="scheduler"',
-            namespaceSelector: 'namespace=~"(openshift-.*|kube-.*|default|logging)"',
+            namespaceSelector: $.values.common.mixinNamespaceSelector,
             cpuThrottlingSelector: 'namespace=~"(openshift-.*|kube-.*|default|logging)"',
             kubeletPodLimit: 250,
           },
@@ -320,7 +331,31 @@ local inCluster =
     },
 
     // Objects
-    clusterMonitoringOperator: clusterMonitoringOperator($.values.clusterMonitoringOperator),
+    clusterMonitoringOperator: clusterMonitoringOperator($.values.clusterMonitoringOperator) {
+      // The cluster-monitoring-operator ClusterRole needs the combined set of
+      // permissions from all its operand ClusterRoles.  This extends the base
+      // ClusterRole by just appending the rules from the others.
+      clusterRole+: {
+        rules+: inCluster.alertmanager.clusterRole.rules +
+                inCluster.clusterMonitoringOperator.clusterRoleView.rules +
+                inCluster.clusterMonitoringOperator.userWorkloadConfigEditRole.rules +
+                inCluster.grafana.clusterRole.rules +
+                inCluster.kubeStateMetrics.clusterRole.rules +
+                inCluster.nodeExporter.clusterRole.rules +
+                inCluster.openshiftStateMetrics.clusterRole.rules +
+                inCluster.prometheusAdapter.clusterRole.rules +
+                inCluster.prometheusAdapter.clusterRoleAggregatedMetricsReader.rules +
+                inCluster.prometheusAdapter.clusterRoleServerResources.rules +
+                inCluster.prometheus.clusterRole.rules +
+                std.flatMap(function(role) role.rules,
+                            inCluster.prometheus.roleSpecificNamespaces.items) +
+                inCluster.prometheus.roleConfig.rules +
+                inCluster.prometheusOperator.clusterRole.rules +
+                inCluster.telemeterClient.clusterRole.rules +
+                inCluster.thanosQuerier.clusterRole.rules +
+                inCluster.thanosRuler.clusterRole.rules,
+      },
+    },
     alertmanager: alertmanager($.values.alertmanager),
     grafana: grafana($.values.grafana),
     kubeStateMetrics: kubeStateMetrics($.values.kubeStateMetrics),
@@ -367,12 +402,15 @@ local userWorkload =
           },
         },
         thanos: inCluster.values.thanosSidecar,
+        tlsCipherSuites: $.values.common.tlsCipherSuites,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
       },
       prometheusOperator: {
         namespace: $.values.common.namespace,
         denyNamespace: inCluster.values.common.namespace,
         version: $.values.common.versions.prometheusOperator,
         image: $.values.common.images.prometheusOperator,
+        kubeRbacProxyImage: $.values.common.images.kubeRbacProxy,
         configReloaderImage: $.values.common.images.prometheusOperatorReloader,
         commonLabels+: $.values.common.commonLabels,
         mixin+: {

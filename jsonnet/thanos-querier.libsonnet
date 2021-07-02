@@ -1,10 +1,11 @@
-local querier = import 'kube-thanos/kube-thanos-query.libsonnet';
+local querier = import 'github.com/thanos-io/kube-thanos/jsonnet/kube-thanos/kube-thanos-query.libsonnet';
 
 function(params)
   local cfg = params;
   local tq = querier(cfg);
   tq {
     mixin:: (import 'github.com/thanos-io/thanos/mixin/alerts/query.libsonnet') {
+      targetGroups: {},
       query+:: {
         selector: 'job="thanos-querier"',
       },
@@ -329,6 +330,9 @@ function(params)
             ],
             serviceAccountName: 'thanos-querier',
             priorityClassName: 'system-cluster-critical',
+            // securityContext needs to be unset to be compatible with current OpenShift constrains for ServiceAccount
+            // OpenShift will automatically assign unprivileged context
+            securityContext:: {},
             containers: [
               super.containers[0] {
                 livenessProbe: {
@@ -430,7 +434,7 @@ function(params)
               },
               {
                 name: 'kube-rbac-proxy',
-                image: 'quay.io/coreos/kube-rbac-proxy:v0.8.0',  //FIXME(paulfantom)
+                image: cfg.kubeRbacProxyImage,
                 resources: {
                   requests: {
                     memory: '15Mi',
@@ -449,7 +453,7 @@ function(params)
                   '--config-file=/etc/kube-rbac-proxy/config.yaml',
                   '--tls-cert-file=/etc/tls/private/tls.crt',
                   '--tls-private-key-file=/etc/tls/private/tls.key',
-                  '--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305',  //FIXME(paulfantom)
+                  '--tls-cipher-suites=' + cfg.tlsCipherSuites,
                   '--logtostderr=true',
                   '--allow-paths=/api/v1/query,/api/v1/query_range',
                 ],
@@ -467,7 +471,7 @@ function(params)
               },
               {
                 name: 'prom-label-proxy',
-                image: 'quay.io/coreos/prom-label-proxy:v0.2.0',  // FIXME(paulfantom)
+                image: cfg.promLabelProxyImage,
                 args: [
                   '--insecure-listen-address=127.0.0.1:9095',
                   '--upstream=http://127.0.0.1:9090',
@@ -483,7 +487,7 @@ function(params)
               },
               {
                 name: 'kube-rbac-proxy-rules',
-                image: 'quay.io/coreos/kube-rbac-proxy:v0.8.0',  //FIXME(paulfantom)
+                image: cfg.kubeRbacProxyImage,
                 resources: {
                   requests: {
                     memory: '15Mi',
@@ -502,7 +506,7 @@ function(params)
                   '--config-file=/etc/kube-rbac-proxy/config.yaml',
                   '--tls-cert-file=/etc/tls/private/tls.crt',
                   '--tls-private-key-file=/etc/tls/private/tls.key',
-                  '--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305',  //FIXME(paulfantom)
+                  '--tls-cipher-suites=' + cfg.tlsCipherSuites,
                   '--logtostderr=true',
                   '--allow-paths=/api/v1/rules',
                 ],

@@ -5,6 +5,8 @@ REPO?=quay.io/openshift/cluster-monitoring-operator
 TAG?=$(shell git rev-parse --short HEAD)
 VERSION=$(shell cat VERSION | tr -d " \t\n\r")
 
+GOOS?=$(shell go env GOOS)
+GOARCH?=$(shell go env GOARCH)
 GO111MODULE?=on
 GOPROXY?=http://proxy.golang.org
 export GO111MODULE
@@ -32,7 +34,7 @@ JSON_MANIFESTS ?= $(patsubst $(MANIFESTS_DIR)%,$(JSON_MANIFESTS_DIR)%,$(patsubst
 JSONNET_SRC=$(shell find ./jsonnet -type f -not -path "./jsonnet/vendor*")
 JSONNET_VENDOR=jsonnet/vendor
 
-GO_BUILD_RECIPE=GOOS=linux CGO_ENABLED=0 go build --ldflags="-s -X $(GO_PKG)/pkg/operator.Version=$(VERSION)"
+GO_BUILD_RECIPE=GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go build --ldflags="-s -X $(GO_PKG)/pkg/operator.Version=$(VERSION)"
 
 .PHONY: all
 all: clean format generate build test
@@ -44,6 +46,10 @@ clean:
 ############
 # Building #
 ############
+
+.PHONY: run-local
+run-local: build
+	KUBECONFIG=$(KUBECONFIG) ./hack/local-cmo.sh
 
 .PHONY: build
 build: operator
@@ -79,7 +85,7 @@ vendor:
 	go mod verify
 
 .PHONY: generate
-generate: build-jsonnet manifests/0000_50_cluster-monitoring-operator_02-role.yaml docs check-assets
+generate: build-jsonnet docs check-assets check-runbooks
 
 .PHONY: generate-in-docker
 generate-in-docker:
@@ -90,7 +96,7 @@ generate-in-docker:
 		cmo-tooling make generate
 
 
-$(JSONNET_VENDOR): $(JB_BIN) jsonnet/jsonnetfile.json
+$(JSONNET_VENDOR): $(JB_BIN) jsonnet/jsonnetfile.json jsonnet/jsonnetfile.lock.json
 	cd jsonnet && $(JB_BIN) install
 
 $(ASSETS): build-jsonnet
@@ -107,9 +113,9 @@ $(JSON_MANIFESTS): $(MANIFESTS)
 .PHONY: json-manifests
 json-manifests: $(JSON_MANIFESTS_DIR) $(JSON_MANIFESTS)
 
-# Merge cluster roles
-manifests/0000_50_cluster-monitoring-operator_02-role.yaml: hack/merge_cluster_roles.py hack/cluster-monitoring-operator-role.yaml.in $(ASSETS)
-	python2 hack/merge_cluster_roles.py hack/cluster-monitoring-operator-role.yaml.in `find assets | grep role | grep -v "role-binding"` > $@
+.PHONY: versions
+versions:
+	./hack/generate-versions.sh > jsonnet/versions.json
 
 .PHONY: docs
 docs: $(EMBEDMD_BIN) Documentation/telemeter_query
@@ -154,16 +160,21 @@ test-rules: check-rules
 check-assets:
 	hack/check-assets.sh
 
+.PHONY: check-runbooks
+check-runbooks:
+	# Get runbook urls from the alerts annotations and test if a link is broken
+	# with wget. It also make sure that the command succeed when there are no urls.
+	@grep -rho 'runbook_url.*' assets || true | cut -f2- -d: | wget --spider -nv -i -
+
 ###########
 # Testing #
 ###########
 
 .PHONY: test
-test: test-unit test-e2e
+test: test-unit test-rules test-e2e
 
-# TODO(simonpasquier): we should have a CI job specifically checking Prometheus rules.
 .PHONY: test-unit
-test-unit: test-rules
+test-unit:
 	go test -race -short $(PKGS) -count=1
 
 .PHONY: test-e2e

@@ -3,7 +3,7 @@
 function(params) {
   local cfg = params,
   //local osm = import 'github.com/openshift/openshift-state-metrics/jsonnet/openshift-state-metrics.libsonnet';
-  local tc = (import 'telemeter-client/client.libsonnet') + {
+  local tc = (import 'github.com/openshift/telemeter/jsonnet/telemeter/client.libsonnet') + {
     _config+:: {
       namespace: cfg.namespace,
       tlsCipherSuites: [
@@ -15,9 +15,6 @@ function(params) {
         'TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305',
         'TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305',
       ],
-      versions+: {
-        kubeRbacProxy: 'latest',
-      },
     },
   },
 
@@ -53,6 +50,10 @@ function(params) {
                       ,
                       c.args,
                     ),
+                  }
+                else if c.name == 'kube-rbac-proxy' then
+                  c {
+                    image: cfg.kubeRbacProxyImage,
                   }
                 else
                   c,

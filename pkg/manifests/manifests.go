@@ -175,7 +175,7 @@ var (
 
 	ClusterMonitoringOperatorService            = "cluster-monitoring-operator/service.yaml"
 	ClusterMonitoringOperatorServiceMonitor     = "cluster-monitoring-operator/service-monitor.yaml"
-	ClusterMonitoringClusterRole                = "cluster-monitoring-operator/cluster-role.yaml"
+	ClusterMonitoringClusterRoleView            = "cluster-monitoring-operator/cluster-role-view.yaml"
 	ClusterMonitoringRulesEditClusterRole       = "cluster-monitoring-operator/monitoring-rules-edit-cluster-role.yaml"
 	ClusterMonitoringRulesViewClusterRole       = "cluster-monitoring-operator/monitoring-rules-view-cluster-role.yaml"
 	ClusterMonitoringEditClusterRole            = "cluster-monitoring-operator/monitoring-edit-cluster-role.yaml"
@@ -228,7 +228,6 @@ var (
 	TelemeterTrustedCABundle = "telemeter-client/trusted-ca-bundle.yaml"
 
 	ControlPlanePrometheusRule        = "control-plane/prometheus-rule.yaml"
-	ControlPlaneEtcdPrometheusRule    = "control-plane/etcd-prometheus-rule.yaml"
 	ControlPlaneKubeletServiceMonitor = "control-plane/service-monitor-kubelet.yaml"
 	ControlPlaneEtcdServiceMonitor    = "control-plane/service-monitor-etcd.yaml"
 )
@@ -412,6 +411,10 @@ func (f *Factory) AlertmanagerMain(host string, trustedCABundleCM *v1.ConfigMap)
 	a.Spec.Image = &f.config.Images.Alertmanager
 
 	a.Spec.ExternalURL = f.AlertmanagerExternalURL(host).String()
+
+	if f.config.ClusterMonitoringConfiguration.AlertmanagerMainConfig.LogLevel != "" {
+		a.Spec.LogLevel = f.config.ClusterMonitoringConfiguration.AlertmanagerMainConfig.LogLevel
+	}
 
 	if f.config.ClusterMonitoringConfiguration.AlertmanagerMainConfig.Resources != nil {
 		a.Spec.Resources = *f.config.ClusterMonitoringConfiguration.AlertmanagerMainConfig.Resources
@@ -2337,8 +2340,8 @@ func (f *Factory) GrafanaServiceMonitor() (*monv1.ServiceMonitor, error) {
 	return s, nil
 }
 
-func (f *Factory) ClusterMonitoringClusterRole() (*rbacv1.ClusterRole, error) {
-	cr, err := f.NewClusterRole(f.assets.MustNewAssetReader(ClusterMonitoringClusterRole))
+func (f *Factory) ClusterMonitoringClusterRoleView() (*rbacv1.ClusterRole, error) {
+	cr, err := f.NewClusterRole(f.assets.MustNewAssetReader(ClusterMonitoringClusterRoleView))
 	if err != nil {
 		return nil, err
 	}
@@ -2438,17 +2441,6 @@ func (f *Factory) ControlPlanePrometheusRule() (*monv1.PrometheusRule, error) {
 		}
 		r.Spec.Groups = groups
 	}
-
-	return r, nil
-}
-
-func (f *Factory) ControlPlaneEtcdPrometheusRule() (*monv1.PrometheusRule, error) {
-	r, err := f.NewPrometheusRule(f.assets.MustNewAssetReader(ControlPlaneEtcdPrometheusRule))
-	if err != nil {
-		return nil, err
-	}
-
-	r.Namespace = f.namespace
 
 	return r, nil
 }

@@ -15,7 +15,6 @@
 package e2e
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -26,65 +25,10 @@ import (
 	"github.com/openshift/cluster-monitoring-operator/pkg/manifests"
 	"github.com/openshift/cluster-monitoring-operator/test/e2e/framework"
 	"github.com/pkg/errors"
-	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
-
-func TestAlertmanagerVolumeClaim(t *testing.T) {
-	err := f.OperatorClient.WaitForStatefulsetRollout(&appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "alertmanager-main",
-			Namespace: f.Ns,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cm := &v1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cluster-monitoring-config",
-			Namespace: f.Ns,
-		},
-		Data: map[string]string{
-			"config.yaml": `alertmanagerMain:
-  volumeClaimTemplate:
-    spec:
-      resources:
-        requests:
-          storage: 2Gi
-`,
-		},
-	}
-
-	if err := f.OperatorClient.CreateOrUpdateConfigMap(cm); err != nil {
-		t.Fatal(err)
-	}
-
-	// Wait for persistent volume claim
-	err = framework.Poll(time.Second, 5*time.Minute, func() error {
-		_, err := f.KubeClient.CoreV1().PersistentVolumeClaims(f.Ns).Get(context.TODO(), "alertmanager-main-db-alertmanager-main-0", metav1.GetOptions{})
-		if err != nil {
-			return errors.Wrap(err, "getting alertmanager persistent volume claim failed")
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = f.OperatorClient.WaitForStatefulsetRollout(&appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "alertmanager-main",
-			Namespace: f.Ns,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestAlertmanagerTrustedCA(t *testing.T) {
 	var (
@@ -95,7 +39,7 @@ func TestAlertmanagerTrustedCA(t *testing.T) {
 
 	// Wait for the new ConfigMap to be created
 	err := wait.Poll(time.Second, 5*time.Minute, func() (bool, error) {
-		cm, err := f.KubeClient.CoreV1().ConfigMaps(f.Ns).Get(context.TODO(), "alertmanager-trusted-ca-bundle", metav1.GetOptions{})
+		cm, err := f.KubeClient.CoreV1().ConfigMaps(f.Ns).Get(f.Ctx, "alertmanager-trusted-ca-bundle", metav1.GetOptions{})
 		lastErr = errors.Wrap(err, "getting new trusted CA ConfigMap failed")
 		if err != nil {
 			return false, nil
@@ -118,7 +62,7 @@ func TestAlertmanagerTrustedCA(t *testing.T) {
 
 	// Wait for the new hashed trusted CA bundle ConfigMap to be created
 	err = wait.Poll(time.Second, 5*time.Minute, func() (bool, error) {
-		_, err := f.KubeClient.CoreV1().ConfigMaps(f.Ns).Get(context.TODO(), newCM.Name, metav1.GetOptions{})
+		_, err := f.KubeClient.CoreV1().ConfigMaps(f.Ns).Get(f.Ctx, newCM.Name, metav1.GetOptions{})
 		lastErr = errors.Wrap(err, "getting new CA ConfigMap failed")
 		if err != nil {
 			return false, nil
@@ -134,7 +78,7 @@ func TestAlertmanagerTrustedCA(t *testing.T) {
 
 	// Get Alertmanager StatefulSet and make sure it has a volume mounted.
 	err = wait.Poll(time.Second, 5*time.Minute, func() (bool, error) {
-		ss, err := f.KubeClient.AppsV1().StatefulSets(f.Ns).Get(context.TODO(), "alertmanager-main", metav1.GetOptions{})
+		ss, err := f.KubeClient.AppsV1().StatefulSets(f.Ns).Get(f.Ctx, "alertmanager-main", metav1.GetOptions{})
 		lastErr = errors.Wrap(err, "getting Alertmanager StatefulSet failed")
 		if err != nil {
 			return false, nil
@@ -179,12 +123,12 @@ func TestAlertmanagerKubeRbacProxy(t *testing.T) {
 			Name: testNs,
 		},
 	}
-	ns, err = f.KubeClient.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{})
+	ns, err = f.KubeClient.CoreV1().Namespaces().Create(f.Ctx, ns, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		err := f.KubeClient.CoreV1().Namespaces().Delete(context.TODO(), testNs, metav1.DeleteOptions{})
+		err := f.KubeClient.CoreV1().Namespaces().Delete(f.Ctx, testNs, metav1.DeleteOptions{})
 		t.Logf("deleting namespace %s: %v", testNs, err)
 	}()
 
@@ -378,17 +322,17 @@ func TestAlertmanagerOAuthProxy(t *testing.T) {
 			"active", "true",
 		)
 		if err != nil {
-			t.Fatal(err)
+			return errors.Wrap(err, "error getting alerts from Alertmanager")
 		}
 
 		res, err := gabs.ParseJSON(body)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "error parsing Alertmanager response: %s", string(body))
 		}
 
 		count, err := res.ArrayCount()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "error getting count of items")
 		}
 
 		if count == 1 {

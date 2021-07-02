@@ -641,7 +641,7 @@ func TestUnconfiguredManifests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = f.ClusterMonitoringClusterRole()
+	_, err = f.ClusterMonitoringClusterRoleView()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1081,6 +1081,7 @@ func TestAdditionalAlertManagerConfigsSecret(t *testing.T) {
       key:
         name: alertmanager2-cert
         key: key.crt
+      serverName: alertmanager2-remote.com
     pathPrefix: /
     staticConfigs:
     - alertmanager2-remote.com
@@ -1097,6 +1098,7 @@ func TestAdditionalAlertManagerConfigsSecret(t *testing.T) {
       key:
         name: alertmanager3-key
         key: key.crt
+      serverName: alertmanager3-remote.com
     pathPrefix: /
     staticConfigs:
     - alertmanager3-remote.com
@@ -1121,6 +1123,7 @@ func TestAdditionalAlertManagerConfigsSecret(t *testing.T) {
     ca_file: /etc/prometheus/secrets/alertmanager2-cert/root-ca.crt
     cert_file: /etc/prometheus/secrets/alertmanager2-cert/cert.crt
     key_file: /etc/prometheus/secrets/alertmanager2-cert/key.crt
+    server_name: alertmanager2-remote.com
     insecure_skip_verify: false
   static_configs:
   - targets:
@@ -1133,6 +1136,7 @@ func TestAdditionalAlertManagerConfigsSecret(t *testing.T) {
     ca_file: /etc/prometheus/secrets/alertmanager3-ca/root-ca.crt
     cert_file: /etc/prometheus/secrets/alertmanager3-cert/cert.crt
     key_file: /etc/prometheus/secrets/alertmanager3-key/key.crt
+    server_name: alertmanager3-remote.com
     insecure_skip_verify: false
   static_configs:
   - targets:
@@ -1206,6 +1210,7 @@ k8sPrometheusAdapter:
 
 func TestAlertmanagerMainConfiguration(t *testing.T) {
 	c, err := NewConfigFromString(`alertmanagerMain:
+  logLevel: debug
   baseImage: quay.io/test/alertmanager
   nodeSelector:
     type: worker
@@ -1241,6 +1246,10 @@ ingress:
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	if a.Spec.LogLevel != "debug" {
+		t.Fatalf("Alertmanager logLevel is not configured correctly, want: 'debug', got: '%s'", a.Spec.LogLevel)
 	}
 
 	if *a.Spec.Image != "docker.io/openshift/origin-prometheus-alertmanager:latest" {
@@ -1421,46 +1430,6 @@ func TestPrometheusK8sControlPlaneRulesFiltered(t *testing.T) {
 			}
 		}
 		tc.verify(apiServerRulesFound)
-	}
-}
-
-func TestPrometheusEtcdRulesFiltered(t *testing.T) {
-	enabled := false
-	c := NewDefaultConfig()
-	c.ClusterMonitoringConfiguration.EtcdConfig.Enabled = &enabled
-	f := NewFactory("openshift-monitoring", "openshift-user-workload-monitoring", c, defaultInfrastructureReader(), &fakeProxyReader{}, NewAssets(assetsPath))
-
-	r, err := f.PrometheusK8sPrometheusRule()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, g := range r.Spec.Groups {
-		if g.Name == "etcd" {
-			t.Fatal("etcd rules found, even if etcd is disabled")
-		}
-	}
-}
-
-func TestPrometheusEtcdRules(t *testing.T) {
-	enabled := true
-	c := NewDefaultConfig()
-	c.ClusterMonitoringConfiguration.EtcdConfig.Enabled = &enabled
-	f := NewFactory("openshift-monitoring", "openshift-user-workload-monitoring", c, defaultInfrastructureReader(), &fakeProxyReader{}, NewAssets(assetsPath))
-
-	r, err := f.ControlPlaneEtcdPrometheusRule()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	found := false
-	for _, g := range r.Spec.Groups {
-		if g.Name == "etcd" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("etcd rules not found, even if etcd is enabled")
 	}
 }
 

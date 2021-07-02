@@ -284,7 +284,7 @@ function(params)
           },
           {
             name: 'kube-rbac-proxy',
-            image: 'quay.io/coreos/kube-rbac-proxy:v0.8.0',  //FIXME(paulfantom)
+            image: cfg.kubeRbacProxyImage,
             resources: {
               requests: {
                 cpu: '1m',
@@ -303,7 +303,7 @@ function(params)
               '--config-file=/etc/kube-rbac-proxy/config.yaml',
               '--tls-cert-file=/etc/tls/private/tls.crt',
               '--tls-private-key-file=/etc/tls/private/tls.key',
-              '--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305',  //FIXME(paulfantom)
+              '--tls-cipher-suites=' + cfg.tlsCipherSuites,
               '--logtostderr=true',
               '--v=10',
             ],
@@ -321,7 +321,7 @@ function(params)
           },
           {
             name: 'prom-label-proxy',
-            image: 'quay.io/coreos/prom-label-proxy:v0.2.0',  // FIXME(paulfantom)
+            image: cfg.promLabelProxyImage,
             args: [
               '--insecure-listen-address=127.0.0.1:9096',
               '--upstream=http://127.0.0.1:9093',

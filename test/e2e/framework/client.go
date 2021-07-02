@@ -45,10 +45,11 @@ type PrometheusClient struct {
 // NewPrometheusClientFromRoute creates and returns a new PrometheusClient from the given OpenShift route.
 func NewPrometheusClientFromRoute(
 	routeClient routev1.RouteV1Interface,
+	ctx context.Context,
 	namespace, name string,
 	token string,
 ) (*PrometheusClient, error) {
-	route, err := routeClient.Routes(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	route, err := routeClient.Routes(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +306,7 @@ func (c *PrometheusClient) WaitForQueryReturn(t *testing.T, timeout time.Duratio
 	err := Poll(5*time.Second, timeout, func() error {
 		body, err := c.PrometheusQuery(query)
 		if err != nil {
-			t.Fatal(err)
+			return errors.Wrapf(err, "error getting response for query %q", query)
 		}
 
 		v, err := GetFirstValueFromPromQuery(body)
@@ -333,7 +334,7 @@ func (c *PrometheusClient) WaitForRulesReturn(t *testing.T, timeout time.Duratio
 	err := Poll(5*time.Second, timeout, func() error {
 		body, err := c.PrometheusRules()
 		if err != nil {
-			t.Fatal(err)
+			return errors.Wrap(err, "error getting rules")
 		}
 
 		if err := validate(body); err != nil {
