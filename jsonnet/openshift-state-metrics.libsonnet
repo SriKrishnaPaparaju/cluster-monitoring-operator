@@ -23,8 +23,7 @@ function(params) {
         'app.kubernetes.io/managed-by': 'cluster-monitoring-operator',
         'app.kubernetes.io/name': 'openshift-state-metrics',
         'app.kubernetes.io/component': 'exporter',
-        'app.kubernetes.io/part-of': 'openshift-monitoring',
-      },
+      } + osm._config.commonLabels,
     },
     spec+: {
       template+: {
